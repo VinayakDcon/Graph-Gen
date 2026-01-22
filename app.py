@@ -165,10 +165,30 @@ Start directly with import statements.
         
         code = code.strip()
         
+        # Sanitize code: Remove any lines that try to redefine df_dict
+        code = sanitize_generated_code(code)
+        
         return code
         
     except Exception as e:
         raise Exception(f"Error calling Groq API: {str(e)}")
+
+def sanitize_generated_code(code: str) -> str:
+    """Remove problematic lines from LLM-generated code."""
+    lines = code.split('\n')
+    sanitized_lines = []
+    
+    for line in lines:
+        stripped = line.strip()
+        # Skip lines that redefine df_dict (e.g., "df_dict = {...}" or "df_dict = {'name': None}")
+        if stripped.startswith('df_dict') and '=' in stripped and '{' in stripped:
+            continue
+        # Skip comment lines about replacing with actual DataFrames
+        if '# replace with actual' in stripped.lower():
+            continue
+        sanitized_lines.append(line)
+    
+    return '\n'.join(sanitized_lines)
 
 def execute_plot_code(code: str, df_dict: Dict[str, pd.DataFrame]) -> plt.Figure:
     """Safely execute generated matplotlib code and return figure."""
