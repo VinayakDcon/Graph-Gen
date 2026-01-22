@@ -272,41 +272,47 @@ st.markdown("Upload an Excel file and describe your desired plot in natural lang
 # Initialize Groq client
 groq_client = get_groq_client()
 
-# Sidebar for file upload
-with st.sidebar:
-    st.header("📁 Upload Data")
-    
-    # Display API status
-    if groq_client:
-        st.success(f"✅ Groq API Connected")
-        st.caption(f"Model: {GROQ_MODEL}")
-    else:
-        st.error("❌ Groq API Not Configured")
-        st.caption("Add GROQ_API_KEY to .env file")
-    
-    st.markdown("---")
-    
-    uploaded_file = st.file_uploader(
-        "Choose Excel or CSV file",
-        type=['xlsx', 'xls', 'csv'],
-        help="Upload your data file to get started"
-    )
-    
-    if uploaded_file:
-        try:
-            df_dict = load_excel_file(uploaded_file)
-            st.session_state.df_dict = df_dict
-            st.success(f"✅ Loaded {len(df_dict)} sheet(s)")
-            
-            # Display data preview
-            st.subheader("Data Preview")
+# File uploader at the top (main area)
+uploaded_file = st.file_uploader(
+    "📁 Choose Excel or CSV file",
+    type=['xlsx', 'xls', 'csv'],
+    help="Upload your data file to get started"
+)
+
+if uploaded_file:
+    try:
+        df_dict = load_excel_file(uploaded_file)
+        st.session_state.df_dict = df_dict
+        st.success(f"✅ Loaded {len(df_dict)} sheet(s)")
+        
+        # Display data preview in expander
+        with st.expander("📄 Data Preview", expanded=False):
             for sheet_name, df in df_dict.items():
-                with st.expander(f"📄 {sheet_name}"):
-                    st.dataframe(df.head(), width='stretch')
-                    st.caption(f"Shape: {df.shape[0]} rows × {df.shape[1]} columns")
-        except Exception as e:
-            st.error(f"❌ {str(e)}")
-            st.session_state.df_dict = {}
+                st.markdown(f"**{sheet_name}** - {df.shape[0]} rows × {df.shape[1]} columns")
+                st.dataframe(df.head(), use_container_width=True)
+    except Exception as e:
+        st.error(f"❌ {str(e)}")
+        st.session_state.df_dict = {}
+
+# Prompt Library Section
+st.markdown("---")
+st.subheader("📚 Prompt Library")
+st.caption("Copy and paste these prompts, replacing placeholders with your column names:")
+
+prompt_library = [
+    "Plot [X_COLUMN] vs [Y_COLUMN] as a line chart",
+    "Create a line plot with [X_COLUMN] on x-axis and [Y_COLUMN] on y-axis, limit x to 500",
+    "Show [Y_COLUMN] against [X_COLUMN] with smoothing applied",
+    "Plot data from sheet [SHEET_NAME] with [X_COLUMN] and [Y_COLUMN]",
+    "Generate a filled area chart of [Y_COLUMN] over [X_COLUMN]"
+]
+
+cols = st.columns(len(prompt_library))
+for i, prompt in enumerate(prompt_library):
+    with cols[i]:
+        st.code(prompt, language=None)
+
+st.markdown("---")
 
 # Main area
 if st.session_state.df_dict and groq_client:
@@ -381,19 +387,9 @@ elif not groq_client:
 GROQ_API_KEY=your_groq_api_key_here
 GROQ_MODEL=llama-3.3-70b-versatile""")
 else:
-    st.info("👈 Please upload an Excel or CSV file to get started.")
-    
-    # Example instructions
-    with st.expander("📖 Example Instructions"):
-        st.markdown("""
-        - "Create a line plot with Temperature on x-axis and Pressure on y-axis"
-        - "Plot Sales vs Time with smoothing window of 10"
-        - "Make a scatter plot of Height vs Weight with grid"
-        - "Bar chart showing Revenue by Quarter with legend"
-        - "Plot column A against column B with smooth curve and title 'My Analysis'"
-        - "Show histogram of Age distribution"
-        """)
+    st.info("👆 Please upload an Excel or CSV file to get started.")
 
 # Footer
 st.markdown("---")
 st.caption("Built for Dcontour Litetech Pvt. Ltd.")
+
