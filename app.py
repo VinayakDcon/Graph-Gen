@@ -307,10 +307,8 @@ prompt_library = [
     "Generate a filled area chart of [Y_COLUMN] over [X_COLUMN]"
 ]
 
-cols = st.columns(len(prompt_library))
-for i, prompt in enumerate(prompt_library):
-    with cols[i]:
-        st.code(prompt, language=None)
+for prompt in prompt_library:
+    st.code(prompt, language=None)
 
 st.markdown("---")
 
