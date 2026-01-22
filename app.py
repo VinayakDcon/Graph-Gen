@@ -300,8 +300,10 @@ st.subheader("📚 Prompt Library")
 st.caption("Copy and paste these prompts, replacing placeholders with your column names:")
 
 prompt_library = [
-    "Plot [X_COLUMN] vs [Y_COLUMN] as a line chart",
-    "Create a line plot with [X_COLUMN] on x-axis and [Y_COLUMN] on y-axis, limit x to 500",
+    "Generate plot with exact same requirements as per the sheet",
+    "Extend the x-axis to 500",
+    "Limit the x-axis to 500 only",
+    "Create a line plot with [X_COLUMN] on x-axis and [Y_COLUMN] on y-axis",
     "Show [Y_COLUMN] against [X_COLUMN] with smoothing applied",
     "Plot data from sheet [SHEET_NAME] with [X_COLUMN] and [Y_COLUMN]",
     "Generate a filled area chart of [Y_COLUMN] over [X_COLUMN]"
