@@ -83,6 +83,14 @@ User Instruction: {user_instruction}
 
 CRITICAL Requirements:
 1. Use the variable 'df_dict' which contains DataFrames (keys are sheet names like '{list(st.session_state.df_dict.keys())[0] if st.session_state.df_dict else "Sheet1"}')
+   IMPORTANT - Data Filtering: When filtering data (e.g., x <= 500), ALWAYS create a mask variable FIRST, then apply to both x and y:
+   CORRECT:
+     mask = df['X'] <= 500
+     x = df['X'][mask]
+     y = df['Y'][mask]
+   WRONG (causes index alignment error):
+     x = x[x <= 500]
+     y = y[x <= 500]  # ERROR: x is already filtered, indices don't match!
 2. Import necessary libraries at the top (matplotlib.pyplot as plt, numpy as np)
 3. Access data like: df = df_dict['SheetName']
 4. Create publication-ready plots with EXACT styling:
