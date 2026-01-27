@@ -53,17 +53,74 @@ def load_excel_file(uploaded_file) -> Dict[str, pd.DataFrame]:
     except Exception as e:
         raise Exception(f"Error loading file: {str(e)}")
 
-def get_data_summary(df_dict: Dict[str, pd.DataFrame]) -> str:
-    """Generate summary of available data for LLM context."""
-    summary = []
+def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """Clean a DataFrame by removing empty rows/columns and converting to numeric."""
+    # Create a copy
+    cleaned_df = df.copy()
+    
+    # Drop rows with all NaN values
+    cleaned_df = cleaned_df.dropna(how='all')
+    
+    # Drop columns with all NaN values
+    cleaned_df = cleaned_df.dropna(axis=1, how='all')
+    
+    # Try to convert all columns to numeric
+    for col in cleaned_df.columns:
+        try:
+            cleaned_df[col] = pd.to_numeric(cleaned_df[col], errors='coerce')
+        except:
+            pass
+    
+    # Drop rows where ALL values are NaN (after numeric conversion)
+    cleaned_df = cleaned_df.dropna(how='all')
+    
+    # Drop rows where ANY numeric column is NaN
+    numeric_cols = cleaned_df.select_dtypes(include=[np.number]).columns
+    if len(numeric_cols) > 0:
+        cleaned_df = cleaned_df.dropna(subset=numeric_cols)
+    
+    # Reset index for clean sequential access
+    cleaned_df = cleaned_df.reset_index(drop=True)
+    
+    return cleaned_df
+
+
+def get_cleaned_df_dict(df_dict: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
+    """Clean all DataFrames in the dictionary."""
+    cleaned_dict = {}
     for sheet_name, df in df_dict.items():
+        cleaned_df = clean_dataframe(df)
+        if len(cleaned_df) > 0:
+            cleaned_dict[sheet_name] = cleaned_df
+    return cleaned_dict
+
+
+def get_data_summary(df_dict: Dict[str, pd.DataFrame]) -> str:
+    """Generate summary of available CLEANED data for LLM context."""
+    # First, clean the data so LLM sees correct columns
+    cleaned_dict = get_cleaned_df_dict(df_dict)
+    
+    summary = []
+    for sheet_name, df in cleaned_dict.items():
         summary.append(f"Sheet: {sheet_name}")
-        summary.append(f"Columns: {', '.join(df.columns.tolist())}")
+        summary.append(f"Available Columns: {list(df.columns)}")
         summary.append(f"Shape: {df.shape[0]} rows × {df.shape[1]} columns")
         
-        # Add sample data types
-        dtypes_str = ", ".join([f"{col}: {dtype}" for col, dtype in df.dtypes.items()])
-        summary.append(f"Data types: {dtypes_str}")
+        # Show actual column names and sample values
+        cols = df.columns.tolist()
+        if len(cols) >= 2:
+            x_col = cols[0]
+            y_col = cols[1]
+            summary.append(f"RECOMMENDED: Use '{x_col}' for X-axis and '{y_col}' for Y-axis")
+            summary.append(f"X-axis range: {df[x_col].min()} to {df[x_col].max()}")
+            summary.append(f"Y-axis range: {df[y_col].min():.4f} to {df[y_col].max():.4f}")
+        
+        # Add sample data
+        summary.append(f"First few rows:")
+        for i in range(min(3, len(df))):
+            row_vals = [f"{df.iloc[i][c]}" for c in cols[:3]]
+            summary.append(f"  Row {i}: {', '.join(row_vals)}")
+        
         summary.append("")
     return "\n".join(summary)
 
@@ -82,36 +139,32 @@ Available Data:
 User Instruction: {user_instruction}
 
 CRITICAL Requirements:
-1. Use the variable 'df_dict' which contains DataFrames (keys are sheet names like '{list(st.session_state.df_dict.keys())[0] if st.session_state.df_dict else "Sheet1"}')
-   ⚠️ NEVER redefine df_dict! It is already provided with real data. Do NOT write: df_dict = {{...}} or set values to None.
+1. Use the variable 'df_dict' which contains ALREADY CLEANED DataFrames (NaN values already removed)
+   ⚠️ The data is PRE-CLEANED. Do NOT call dropna() - it's already done!
+   ⚠️ NEVER redefine df_dict! It is already provided with real data.
    
-   ⚠️ MANDATORY DATA HANDLING (FOLLOW EXACTLY):
-   CORRECT (REQUIRED):
-     df = df_dict['Sheet1']
-     # Drop rows with NaN values first
-     df = df.dropna()
-     x = df['Unnamed: 0'].values
-     y = df['Unnamed: 1'].values
+   ⚠️ USE EXACT COLUMN NAMES FROM THE DATA SUMMARY ABOVE!
+   Look at 'Available Columns' and 'RECOMMENDED' lines in the data summary.
+   
+   CORRECT PATTERN:
+     df = df_dict['Sheet1']  # Get the sheet
+     # Use the EXACT column names from the summary above (look at 'Available Columns')
+     cols = list(df.columns)  # Get available column names
+     x = df[cols[0]].values  # First column is usually X
+     y = df[cols[1]].values  # Second column is usually Y
      
-     # CRITICAL: Check for empty data first!
+     # Check for empty data
      if len(x) == 0:
          raise ValueError("Data is empty. Cannot create plot.")
-     
-     # DO NOT use max(x) for filtering - just plot all data
-     # The system will auto-set x-axis limits
    
-   IMPORTANT - Data Filtering: When filtering data (e.g., x <= 500), ALWAYS create a mask variable FIRST, then apply to both x and y:
-   CORRECT:
-     df = df.dropna()  # Clean NaN first!
-     x = df['X'].values
-     y = df['Y'].values
-     if len(x) > 0:
-         mask = x <= 500
-         x = x[mask]
-         y = y[mask]
+   IMPORTANT - Data Filtering:
+   When filtering data (e.g., x <= 500), create a mask and apply to BOTH:
+     mask = x <= 500
+     x = x[mask]
+     y = y[mask]
    
-   ⚠️ DO NOT write code like: mask = x <= max(x) - This is redundant and can cause errors!
-   ⚠️ NEVER call max() or min() on potentially empty arrays without checking length first!
+   ⚠️ DO NOT write: mask = x <= max(x) - This is redundant!
+   ⚠️ DO NOT call dropna() - data is already cleaned!
 2. Import necessary libraries at the top (matplotlib.pyplot as plt, numpy as np)
 3. Access data like: df = df_dict['SheetName'] - the df_dict is already populated with actual DataFrames
 4. Create publication-ready plots with EXACT styling:
@@ -217,28 +270,15 @@ def execute_plot_code(code: str, df_dict: Dict[str, pd.DataFrame]) -> plt.Figure
         if not df_dict:
             raise ValueError("No data available. Please upload a file first.")
         
-        # Preprocess dataframes: drop NaN values and validate
-        cleaned_df_dict = {}
-        all_empty = True
-        for sheet_name, df in df_dict.items():
-            # Create a copy and drop rows with all NaN values
-            cleaned_df = df.dropna(how='all').copy()
-            # Also drop columns with all NaN values
-            cleaned_df = cleaned_df.dropna(axis=1, how='all')
-            # Try to convert numeric columns
-            for col in cleaned_df.columns:
-                try:
-                    cleaned_df[col] = pd.to_numeric(cleaned_df[col], errors='coerce')
-                except:
-                    pass
-            # Drop rows where any numeric column is NaN
-            cleaned_df = cleaned_df.dropna()
-            cleaned_df_dict[sheet_name] = cleaned_df
-            if len(cleaned_df) > 0:
-                all_empty = False
+        # Use the centralized cleaning function
+        cleaned_df_dict = get_cleaned_df_dict(df_dict)
         
-        if all_empty:
+        if not cleaned_df_dict:
             raise ValueError("All dataframes are empty after cleaning. Please check your data file.")
+        
+        # Log available columns for debugging
+        for sheet_name, cleaned_df in cleaned_df_dict.items():
+            print(f"[DEBUG] Sheet '{sheet_name}' cleaned: {len(cleaned_df)} rows, columns: {list(cleaned_df.columns)}")
         
         # Create execution environment with cleaned data
         exec_globals = {
@@ -332,11 +372,17 @@ if uploaded_file:
         st.session_state.df_dict = df_dict
         st.success(f"✅ Loaded {len(df_dict)} sheet(s)")
         
-        # Display data preview in expander
-        with st.expander("📄 Data Preview", expanded=False):
-            for sheet_name, df in df_dict.items():
-                st.markdown(f"**{sheet_name}** - {df.shape[0]} rows × {df.shape[1]} columns")
-                st.dataframe(df.head(), use_container_width=True)
+        # Display data preview in expander - show CLEANED data
+        with st.expander("📄 Data Preview (Cleaned)", expanded=False):
+            cleaned_dict = get_cleaned_df_dict(df_dict)
+            for sheet_name, cleaned_df in cleaned_dict.items():
+                st.markdown(f"**{sheet_name}** - {cleaned_df.shape[0]} rows × {cleaned_df.shape[1]} columns")
+                st.markdown(f"📊 **Available columns for plotting:** `{list(cleaned_df.columns)}`")
+                if len(cleaned_df.columns) >= 2:
+                    x_col = cleaned_df.columns[0]
+                    y_col = cleaned_df.columns[1]
+                    st.markdown(f"✅ **Recommended:** X-axis = `{x_col}` (range: {cleaned_df[x_col].min()} to {cleaned_df[x_col].max()}), Y-axis = `{y_col}`")
+                st.dataframe(cleaned_df.head(10), use_container_width=True)
     except Exception as e:
         st.error(f"❌ {str(e)}")
         st.session_state.df_dict = {}
