@@ -85,30 +85,33 @@ CRITICAL Requirements:
 1. Use the variable 'df_dict' which contains DataFrames (keys are sheet names like '{list(st.session_state.df_dict.keys())[0] if st.session_state.df_dict else "Sheet1"}')
    ⚠️ NEVER redefine df_dict! It is already provided with real data. Do NOT write: df_dict = {{...}} or set values to None.
    
-   ⚠️ MANDATORY DATA VALIDATION: ALWAYS check that data is not empty BEFORE any operations:
+   ⚠️ MANDATORY DATA HANDLING (FOLLOW EXACTLY):
    CORRECT (REQUIRED):
      df = df_dict['Sheet1']
-     x = df['Unnamed: 0']
-     y = df['Unnamed: 1']
+     # Drop rows with NaN values first
+     df = df.dropna()
+     x = df['Unnamed: 0'].values
+     y = df['Unnamed: 1'].values
      
      # CRITICAL: Check for empty data first!
      if len(x) == 0:
          raise ValueError("Data is empty. Cannot create plot.")
      
-     # Now safe to use max(), min(), filtering, etc.
-     mask = x <= max(x)
-     x = x[mask]
-     y = y[mask]
+     # DO NOT use max(x) for filtering - just plot all data
+     # The system will auto-set x-axis limits
    
    IMPORTANT - Data Filtering: When filtering data (e.g., x <= 500), ALWAYS create a mask variable FIRST, then apply to both x and y:
    CORRECT:
-     if len(df['X']) > 0:  # Always check first!
-         mask = df['X'] <= 500
-         x = df['X'][mask]
-         y = df['Y'][mask]
-   WRONG (causes index alignment error):
-     x = x[x <= 500]
-     y = y[x <= 500]  # ERROR: x is already filtered, indices don't match!
+     df = df.dropna()  # Clean NaN first!
+     x = df['X'].values
+     y = df['Y'].values
+     if len(x) > 0:
+         mask = x <= 500
+         x = x[mask]
+         y = y[mask]
+   
+   ⚠️ DO NOT write code like: mask = x <= max(x) - This is redundant and can cause errors!
+   ⚠️ NEVER call max() or min() on potentially empty arrays without checking length first!
 2. Import necessary libraries at the top (matplotlib.pyplot as plt, numpy as np)
 3. Access data like: df = df_dict['SheetName'] - the df_dict is already populated with actual DataFrames
 4. Create publication-ready plots with EXACT styling:
@@ -214,21 +217,34 @@ def execute_plot_code(code: str, df_dict: Dict[str, pd.DataFrame]) -> plt.Figure
         if not df_dict:
             raise ValueError("No data available. Please upload a file first.")
         
-        # Validate that dataframes have data
+        # Preprocess dataframes: drop NaN values and validate
+        cleaned_df_dict = {}
         all_empty = True
         for sheet_name, df in df_dict.items():
-            if len(df) > 0:
+            # Create a copy and drop rows with all NaN values
+            cleaned_df = df.dropna(how='all').copy()
+            # Also drop columns with all NaN values
+            cleaned_df = cleaned_df.dropna(axis=1, how='all')
+            # Try to convert numeric columns
+            for col in cleaned_df.columns:
+                try:
+                    cleaned_df[col] = pd.to_numeric(cleaned_df[col], errors='coerce')
+                except:
+                    pass
+            # Drop rows where any numeric column is NaN
+            cleaned_df = cleaned_df.dropna()
+            cleaned_df_dict[sheet_name] = cleaned_df
+            if len(cleaned_df) > 0:
                 all_empty = False
-                break
         
         if all_empty:
-            raise ValueError("All dataframes are empty. Please check your data file.")
+            raise ValueError("All dataframes are empty after cleaning. Please check your data file.")
         
-        # Create execution environment
+        # Create execution environment with cleaned data
         exec_globals = {
             'plt': plt,
             'np': np,
-            'df_dict': df_dict,
+            'df_dict': cleaned_df_dict,
             'pd': pd
         }
         
