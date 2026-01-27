@@ -84,11 +84,28 @@ User Instruction: {user_instruction}
 CRITICAL Requirements:
 1. Use the variable 'df_dict' which contains DataFrames (keys are sheet names like '{list(st.session_state.df_dict.keys())[0] if st.session_state.df_dict else "Sheet1"}')
    ⚠️ NEVER redefine df_dict! It is already provided with real data. Do NOT write: df_dict = {{...}} or set values to None.
+   
+   ⚠️ MANDATORY DATA VALIDATION: ALWAYS check that data is not empty BEFORE any operations:
+   CORRECT (REQUIRED):
+     df = df_dict['Sheet1']
+     x = df['Unnamed: 0']
+     y = df['Unnamed: 1']
+     
+     # CRITICAL: Check for empty data first!
+     if len(x) == 0:
+         raise ValueError("Data is empty. Cannot create plot.")
+     
+     # Now safe to use max(), min(), filtering, etc.
+     mask = x <= max(x)
+     x = x[mask]
+     y = y[mask]
+   
    IMPORTANT - Data Filtering: When filtering data (e.g., x <= 500), ALWAYS create a mask variable FIRST, then apply to both x and y:
    CORRECT:
-     mask = df['X'] <= 500
-     x = df['X'][mask]
-     y = df['Y'][mask]
+     if len(df['X']) > 0:  # Always check first!
+         mask = df['X'] <= 500
+         x = df['X'][mask]
+         y = df['Y'][mask]
    WRONG (causes index alignment error):
      x = x[x <= 500]
      y = y[x <= 500]  # ERROR: x is already filtered, indices don't match!
@@ -193,6 +210,20 @@ def sanitize_generated_code(code: str) -> str:
 def execute_plot_code(code: str, df_dict: Dict[str, pd.DataFrame]) -> plt.Figure:
     """Safely execute generated matplotlib code and return figure."""
     try:
+        # Validate that df_dict is not empty
+        if not df_dict:
+            raise ValueError("No data available. Please upload a file first.")
+        
+        # Validate that dataframes have data
+        all_empty = True
+        for sheet_name, df in df_dict.items():
+            if len(df) > 0:
+                all_empty = False
+                break
+        
+        if all_empty:
+            raise ValueError("All dataframes are empty. Please check your data file.")
+        
         # Create execution environment
         exec_globals = {
             'plt': plt,
